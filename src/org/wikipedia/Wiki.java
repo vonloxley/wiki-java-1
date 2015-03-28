@@ -513,7 +513,7 @@ public class Wiki implements Serializable
      */
     protected void initVars()
     {
-        StringBuilder basegen = new StringBuilder("https://");
+        StringBuilder basegen = new StringBuilder("http://");
         basegen.append(domain);
         basegen.append(scriptPath);
         StringBuilder apigen = new StringBuilder(basegen);        
