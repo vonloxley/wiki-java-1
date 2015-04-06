@@ -4534,7 +4534,7 @@ public class Wiki implements Serializable
      *
      *  @param name the name of the category
      *  @param subcat do you want to return members of sub-categories also? (default: false)
-     *  Recursion is limited to a depth of one.
+     *  Recursion is not limited.
      *  @param ns a list of namespaces to filter by, empty = all namespaces.
      *  @return a String[] containing page titles of members of the category
      *  @throws IOException if a network error occurs
@@ -4579,7 +4579,7 @@ public class Wiki implements Serializable
                 // fetch subcategories
                 boolean iscat = namespace(member) == CATEGORY_NAMESPACE;
                 if (subcat && iscat)
-                    members.addAll(Arrays.asList(getCategoryMembers(member, false, ns)));
+                    members.addAll(Arrays.asList(getCategoryMembers(member, true, ns)));
                 
                 // ignore this item if we requested subcat but not CATEGORY_NAMESPACE
                 if (!subcat || !nocat || !iscat)
