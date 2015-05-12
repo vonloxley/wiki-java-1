@@ -433,6 +433,7 @@ public class Wiki implements Serializable
     private boolean zipped = true;
     private boolean markminor = false, markbot = false;
     private boolean resolveredirect = false;
+    private String protocol = "https://";
     private Level loglevel = Level.ALL;
     private static final Logger logger = Logger.getLogger("wiki");
 
@@ -454,7 +455,7 @@ public class Wiki implements Serializable
     // CONSTRUCTORS AND CONFIGURATION
 
     /**
-     *  Creates a new connection to the English Wikipedia.
+     *  Creates a new connection to the English Wikipedia via HTTPS.
      *  @since 0.02
      */
     public Wiki()
@@ -463,10 +464,10 @@ public class Wiki implements Serializable
     }
 
     /**
-     *  Creates a new connection to a wiki. WARNING: if the wiki uses a
-     *  $wgScriptpath other than the default <tt>/w</tt>, you need to call
+     *  Creates a new connection to a wiki via HTTPS. WARNING: if the wiki uses
+     *  a $wgScriptpath other than the default <tt>/w</tt>, you need to call
      *  <tt>getScriptPath()</tt> to automatically set it. Alternatively, you
-     *  can use the constructor below if you know it in advance.
+     *  can use the constructor below if you know it in advance. 
      *
      *  @param domain the wiki domain name e.g. en.wikipedia.org (defaults to
      *  en.wikipedia.org)
@@ -478,7 +479,7 @@ public class Wiki implements Serializable
 
     /**
      *  Creates a new connection to a wiki with $wgScriptpath set to
-     *  <tt>scriptPath</tt>.
+     *  <tt>scriptPath</tt> via HTTPS.
      *
      *  @param domain the wiki domain name
      *  @param scriptPath the script path
@@ -486,10 +487,25 @@ public class Wiki implements Serializable
      */
     public Wiki(String domain, String scriptPath)
     {
+        this(domain, scriptPath, "https://");
+    }
+    
+    /**
+     *  Creates a new connection to a wiki with $wgScriptpath set to
+     *  <tt>scriptPath</tt> via the specified protocol.
+     * 
+     *  @param domain the wiki domain name
+     *  @param scriptPath the script path
+     *  @param protocol a protocol e.g. "http://", "https://" or "file:///"
+     *  @since 0.31
+     */
+    public Wiki(String domain, String scriptPath, String protocol)
+    {
         if (domain == null || domain.isEmpty())
             domain = "en.wikipedia.org";
         this.domain = domain;
         this.scriptPath = scriptPath;
+        this.protocol = protocol;
 
         // init variables
         // This is fine as long as you do not have parameters other than domain
@@ -513,7 +529,7 @@ public class Wiki implements Serializable
      */
     protected void initVars()
     {
-        StringBuilder basegen = new StringBuilder("http://");
+        StringBuilder basegen = new StringBuilder(protocol);
         basegen.append(domain);
         basegen.append(scriptPath);
         StringBuilder apigen = new StringBuilder(basegen);        
@@ -1248,9 +1264,9 @@ public class Wiki implements Serializable
      *  <ul>
      *  <li><b>displaytitle</b>: (String) the title of the page that is actually 
      *    displayed. Example: "iPod"
-     *  <li><b>protection</b>: (HashMap) the {@link #protect(java.lang.String, 
-     *    java.util.HashMap) protection state} of the page (HashMap). Does not 
-     *    cover implied protection levels (e.g. MediaWiki namespace).
+     *  <li><b>protection</b>: (Map) the {@link #protect(java.lang.String, 
+     *    java.util.Map, java.lang.String) protection state} of the page. Does 
+     *    not cover implied protection levels (e.g. MediaWiki namespace).
      *  <li><b>token</b>: (String) an edit token for the page, must be logged in
      *    to be non-trivial
      *  <li><b>exists</b>: (Boolean) whether the page exists
@@ -1268,7 +1284,7 @@ public class Wiki implements Serializable
      *  </ul>
      *
      *  @param pages the pages to get info for.
-     *  @return (see above). The HashMaps will come out in the same order as the
+     *  @return (see above). The Maps will come out in the same order as the
      *  processed array.
      *  @throws IOException if a network error occurs
      *  @since 0.23
@@ -1666,10 +1682,11 @@ public class Wiki implements Serializable
      *
      *  @param text the text of the page
      *  @param title the title of the page
-     *  @param summary the edit summary. See [[Help:Edit summary]]. Summaries
-     *  longer than 200 characters are truncated server-side.
+     *  @param summary the edit summary or the title of the new section. See 
+     *  [[Help:Edit summary]]. Summaries longer than 200 characters are 
+     *  truncated server-side.
      *  @param minor whether the edit should be marked as minor, See 
-     * [[Help:Minor edit]].
+     *  [[Help:Minor edit]].
      *  @param bot whether to mark the edit as a bot edit (ignored if one does
      *  not have the necessary permissions)
      *  @param section the section to edit. Use -1 to specify a new section and
@@ -1709,8 +1726,12 @@ public class Wiki implements Serializable
         buffer.append(URLEncoder.encode(normalize(title), "UTF-8"));
         buffer.append("&text=");
         buffer.append(URLEncoder.encode(text, "UTF-8"));
-        buffer.append("&summary=");
-        buffer.append(URLEncoder.encode(summary, "UTF-8"));
+        if (section != -1)
+        {
+            // edit summary created automatically if making a new section
+            buffer.append("&summary=");
+            buffer.append(URLEncoder.encode(summary, "UTF-8"));
+        }
         buffer.append("&token=");
         buffer.append(URLEncoder.encode(wpEditToken, "UTF-8"));
         if (basetime != null)
@@ -1726,7 +1747,10 @@ public class Wiki implements Serializable
         if (bot && user.isAllowedTo("bot"))
             buffer.append("&bot=1");
         if (section == -1)
-            buffer.append("&section=new");
+        {
+            buffer.append("&section=new&sectiontitle=");
+            buffer.append(URLEncoder.encode(summary, "UTF-8"));
+        }
         else if (section != -2)
         {
             buffer.append("&section=");
@@ -1882,7 +1906,7 @@ public class Wiki implements Serializable
     
     /**
      *  Undeletes a page. Equivalent to [[Special:Undelete]]. Restores ALL deleted
-     *  revisions and files by default.
+     *  revisions and files by default. This method is throttled.
      *  @param title a page to undelete
      *  @param reason the reason for undeletion
      *  @param revisions a list of revisions for selective undeletion
@@ -3361,12 +3385,30 @@ public class Wiki implements Serializable
      *
      *  @param title the title of the image (may contain "File")
      *  @return the image data or null if the image doesn't exist
+     *  @deprecated expects a file as additional parameter
      *  @throws IOException if a network error occurs
      *  @since 0.10
      */
+    @Deprecated
     public byte[] getImage(String title) throws IOException
     {
         return getImage(title, -1, -1);
+    }
+    
+    /**
+     *  Fetches an image and saves it in the given file. Warning: This does overwrite any file content!
+     *  Works for external repositories. 
+     *
+     *  @param title the title of the image (may contain "File")
+     *  @param file the file to save the image to.
+     *  @return true or false if the image doesn't exist
+     *  @throws FileNotFoundException if the file is a directory, cannot be created or opened
+     *  @throws IOException if a network error occurs
+     *  @since 0.30
+     */
+    public boolean getImage(String title, File file) throws FileNotFoundException, IOException
+    {
+        return getImage(title, -1, -1, file);
     }
 
     /**
@@ -3378,8 +3420,10 @@ public class Wiki implements Serializable
      *  @param height the height of the thumbnail (use -1 for actual height)
      *  @return the image data or null if the image doesn't exist
      *  @throws IOException if a network error occurs
+     *  @deprecated expects a file as additional parameter
      *  @since 0.13
      */
+    @Deprecated
     public byte[] getImage(String title, int width, int height) throws IOException
     {
         // this is a two step process - first we fetch the image url
@@ -3402,13 +3446,63 @@ public class Wiki implements Serializable
         setCookies(connection);
         connection.connect();
         // there should be a better way to do this
+        try(
         BufferedInputStream in = new BufferedInputStream(connection.getInputStream());
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream out = new ByteArrayOutputStream()){
         int c;
         while ((c = in.read()) != -1)
             out.write(c);
         log(Level.INFO, "getImage", "Successfully retrieved image \"" + title + "\"");
         return out.toByteArray();
+        }
+    }
+    
+    /**
+     *  Fetches a thumbnail of an image file and saves the image data
+     *  into the given file. Warning: This does overwrite any file content!
+     *  Works for external repositories.
+     *
+     *  @param title the title of the image (may contain "File")
+     *  @param width the width of the thumbnail (use -1 for actual width)
+     *  @param height the height of the thumbnail (use -1 for actual height)
+     *  @param file a write-able file to save the data to.
+     *  @return true or false if the image doesn't exist
+     *  @throws FileNotFoundException if the file is a directory, cannot be created or opened
+     *  @throws IOException if a network error occurs
+     *  @since 0.30
+     */
+    public boolean getImage(String title, int width, int height, File file) throws FileNotFoundException, IOException
+    {
+        // this is a two step process - first we fetch the image url
+        title = title.replaceFirst("^(File|Image|" + namespaceIdentifier(FILE_NAMESPACE) + "):", "");
+        StringBuilder url = new StringBuilder(query);
+        url.append("prop=imageinfo&iiprop=url&titles=");
+        url.append(URLEncoder.encode(normalize("File:" + title), "UTF-8"));
+        url.append("&iiurlwidth=");
+        url.append(width);
+        url.append("&iiurlheight=");
+        url.append(height);
+        String line = fetch(url.toString(), "getImage");
+        if (!line.contains("<imageinfo>"))
+            return false;
+        String url2 = parseAttribute(line, "url", 0);
+
+        // then we use ImageIO to read from it
+        logurl(url2, "getImage");
+        URLConnection connection = makeConnection(url2);
+        setCookies(connection);
+        connection.connect();
+        // there should be a better way to do this
+		try (BufferedInputStream in = new BufferedInputStream(connection.getInputStream());
+			 BufferedOutputStream outStream = new BufferedOutputStream(new FileOutputStream(file)))
+		{
+			int c;
+			while ((c = in.read()) != -1)
+				outStream.write(c);
+			outStream.flush();
+		}
+		log(Level.INFO, "getImage", "Successfully retrieved image \"" + title + "\"");
+		return true;
     }
 
     /**
@@ -4104,6 +4198,67 @@ public class Wiki implements Serializable
             throw new UnsupportedOperationException("Email is disabled for this wiki or you do not have a confirmed email address.");
         throttle(start);
         log(Level.INFO, "emailUser", "Successfully emailed " + user.getUsername() + ".");
+    }
+    
+    /**
+     *  Unblocks a user. This method is throttled.
+     *  @param blockeduser the user to unblock
+     *  @param reason the reason for unblocking
+     *  @throws CredentialNotFoundException if not an admin
+     *  @throws IOException if a network error occurs
+     *  @throws CredentialExpiredException if cookies have expired
+     *  @throws AccountLockedException if you have been blocked
+     *  @since 0.31
+     */
+    public synchronized void unblock(String blockeduser, String reason) throws IOException, LoginException
+    {
+        long start = System.currentTimeMillis();
+        if (user == null || !user.isA("sysop"))
+           throw new CredentialNotFoundException("Cannot unblock: permission denied!");
+        
+        // fetch token
+        String temp = fetch(query + "action=query&meta=tokens", "unblock");
+        String token = parseAttribute(temp, "csrftoken", 0);
+        
+        // send request
+        String request = "user=" + URLEncoder.encode(blockeduser, "UTF-8") +
+            "&reason=" + URLEncoder.encode(reason, "UTF-8") + "&token=" +
+            URLEncoder.encode(token, "UTF-8");
+        String response = post(query + "action=unblock", request, "unblock");
+        
+        // done
+        try
+        {
+            if (!response.contains("<unblock "))
+                checkErrorsAndUpdateStatus(response, "unblock");
+            else if (response.contains("code=\"cantunblock\""))
+                log(Level.INFO, "unblock", blockeduser + " is not blocked.");
+            else if (response.contains("code=\"blockedasrange\""))
+            {
+                log(Level.SEVERE, "unblock", "IP " + blockeduser + " is rangeblocked.");
+                return; // throw exception? 
+            }
+                
+        }
+        catch (IOException e)
+        {
+            // retry once
+            if (retry)
+            {
+                retry = false;
+                log(Level.WARNING, "undelete", "Exception: " + e.getMessage() + " Retrying...");
+                unblock(blockeduser, reason);
+            }
+            else
+            {
+                log(Level.SEVERE, "unblock", "EXCEPTION: " + e);
+                throw e;
+            }
+        }
+        if (retry)
+            log(Level.INFO, "unblock", "Successfully unblocked " + blockeduser);
+        retry = true;
+        throttle(start);
     }
 
     // WATCHLIST METHODS
@@ -5675,7 +5830,7 @@ public class Wiki implements Serializable
          *  Gets various properties of this user. Groups and rights are cached
          *  for the current logged in user. Returns:
          *  <ul>
-         *  <li><b>editcount</b>: (int) {@link #countEdits() the user's edit 
+         *  <li><b>editcount</b>: (int) {@link #countEdits()} the user's edit 
          *    count
          *  <li><b>groups</b>: (String[]) the groups the user is in (see
          *    [[Special:Listgrouprights]])
@@ -6917,7 +7072,7 @@ public class Wiki implements Serializable
      *  is not present
      *  @since 0.28
      */
-    private String parseAttribute(String xml, String attribute, int index)
+    protected String parseAttribute(String xml, String attribute, int index)
     {
         // let's hope the JVM always inlines this
         if (xml.contains(attribute + "=\""))
