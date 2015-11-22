@@ -5326,7 +5326,7 @@ public class Wiki implements Serializable
         if (xml.contains("commenthidden")) // oversighted
             details = null;
         else if (type.equals(MOVE_LOG))
-            details = parseAttribute(xml, "new_title", 0); // the new title
+            details = parseAttribute(xml, "target_title", 0); // the new title
         else if (type.equals(BLOCK_LOG) || xml.contains("<block"))
         {
             int a = xml.indexOf("<block") + 7;
@@ -6573,7 +6573,7 @@ public class Wiki implements Serializable
                     int b = line.indexOf("</diff>", a);
                     return decode(line.substring(a, b));
                 }
-                else
+                else 
                     // <diff> tag has no content if there is no diff
                     return null;
             }
@@ -6932,25 +6932,9 @@ public class Wiki implements Serializable
         connection.connect();
         grabCookies(connection);
 
-        // check lag
-        int lag = connection.getHeaderFieldInt("X-Database-Lag", -5);
-        if (lag > maxlag)
-        {
-            try
-            {
-                synchronized(this)
-                {
-                    int time = connection.getHeaderFieldInt("Retry-After", 10);
-                    log(Level.WARNING, caller, "Current database lag " + lag + " s exceeds " + maxlag + " s, waiting " + time + " s.");
-                    Thread.sleep(time * 1000);
-                }
-            }
-            catch (InterruptedException ex)
-            {
-                // nobody cares
-            }
-            return fetch(url, caller); // retry the request
-        }
+        // check lag and retry
+        if (checkLag(connection))
+            fetch(url, caller);
 
         // get the text
         String temp;
@@ -7003,10 +6987,15 @@ public class Wiki implements Serializable
         connection.setConnectTimeout(CONNECTION_CONNECT_TIMEOUT_MSEC);
         connection.setReadTimeout(CONNECTION_READ_TIMEOUT_MSEC);
         connection.connect();
+
         try (OutputStreamWriter out = new OutputStreamWriter(connection.getOutputStream(), "UTF-8"))
         {
             out.write(text);
         }
+        // check lag and retry
+        if (checkLag(connection))
+            post(url, text, caller);
+        
         StringBuilder temp = new StringBuilder(100000);
         try (BufferedReader in = new BufferedReader(new InputStreamReader(
             zipped ? new GZIPInputStream(connection.getInputStream()) : connection.getInputStream(), "UTF-8")))
@@ -7046,9 +7035,9 @@ public class Wiki implements Serializable
         connection.setConnectTimeout(CONNECTION_CONNECT_TIMEOUT_MSEC);
         connection.setReadTimeout(CONNECTION_READ_TIMEOUT_MSEC);
         connection.connect();
-        boundary = "--" + boundary + "\r\n";
-
+        
         // write stuff to a local buffer
+        boundary = "--" + boundary + "\r\n";
         ByteArrayOutputStream bout = new ByteArrayOutputStream();
         try (DataOutputStream out = new DataOutputStream(bout))
         {
@@ -7082,6 +7071,10 @@ public class Wiki implements Serializable
             // write the buffer to the URLConnection
             uout.write(bout.toByteArray());
         }
+        
+        // check lag and retry
+        if (checkLag(connection))
+            multipartPost(url, params, caller);
 
         // done, read the response
         StringBuilder temp = new StringBuilder(100000);
@@ -7097,6 +7090,33 @@ public class Wiki implements Serializable
             }
         }
         return temp.toString();
+    }
+    
+    /**
+     *  Checks for database lag and sleeps if lag > maxlag.
+     *  @param connection the URL connection used in the request
+     *  @return true if there was sufficient database lag.
+     *  @since 0.32
+     */
+    protected synchronized boolean checkLag(URLConnection connection)
+    {
+        // check lag
+        int lag = connection.getHeaderFieldInt("X-Database-Lag", -5);
+        if (lag > maxlag)
+        {
+            try
+            {
+                int time = connection.getHeaderFieldInt("Retry-After", 10);
+                logger.log(Level.WARNING, "Current database lag " + lag + " s exceeds " + maxlag + " s, waiting " + time + " s.");
+                Thread.sleep(time * 1000);
+            }
+            catch (InterruptedException ex)
+            {
+                // nobody cares
+            }
+            return true;
+        }
+        return false;
     }
 
     /**
