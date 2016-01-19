@@ -4950,6 +4950,7 @@ public class Wiki implements Serializable
         url.append(encode("Category:" + name, true));
         if (sorttimestamp)
             url.append("&cmsort=timestamp");
+        visitedcategories.add(name);
         boolean nocat = ns.length != 0;
         if (maxdepth > 0 && nocat)
         {
