@@ -188,7 +188,7 @@ public class Wiki implements Serializable
      *  Denotes all namespaces.
      *  @since 0.03
      */
-    public static final int ALL_NAMESPACES = 0x09f91102;
+    public static final int ALL_NAMESPACES = 0x09f9_1102;
 
     // LOG TYPES
 
@@ -427,7 +427,7 @@ public class Wiki implements Serializable
     // preferences
     private int max = 500;
     private int slowmax = 50;
-    private int throttle = 10000; // throttle
+    private int throttle = 10_000; // throttle
     private int readThrottle = 100; // ReadThrottle max 10 reads per sec.
     private int maxlag = 5;
     private int assertion = ASSERT_NONE; // assertion mode
@@ -449,13 +449,13 @@ public class Wiki implements Serializable
     private boolean retry = true;
 
     // serial version
-    private static final long serialVersionUID = -8745212681497643456L;
+    private static final long serialVersionUID = -8_745_212_681_497_643_456L;
 
     // time to open a connection
-    private static final int CONNECTION_CONNECT_TIMEOUT_MSEC = 30000; // 30 seconds
+    private static final int CONNECTION_CONNECT_TIMEOUT_MSEC = 30_000; // 30 seconds
     // time for the read to take place. (needs to be longer, some connections are slow
     // and the data volume is large!)
-    private static final int CONNECTION_READ_TIMEOUT_MSEC = 180000; // 180 seconds
+    private static final int CONNECTION_READ_TIMEOUT_MSEC = 180_000; // 180 seconds
     // log2(upload chunk size). Default = 22 => upload size = 4 MB. Disable
     // chunked uploads by setting a large value here (50 = 1 PB will do).
     private static final int LOG2_CHUNK_SIZE = 22;
@@ -993,7 +993,7 @@ public class Wiki implements Serializable
             boolean apihighlimit = user.isAllowedTo("apihighlimits");
             if (apihighlimit)
             {
-                max = 5000;
+                max = 5_000;
                 slowmax = 500;
             }
             log(Level.INFO, "login", "Successfully logged in as " + username + ", highLimit = " + apihighlimit);
@@ -1009,7 +1009,7 @@ public class Wiki implements Serializable
             else if (line.contains("Throttled"))
             {
                 int wait = new Integer(parseAttribute(line, "wait", 0));
-                nextLoginTime = System.currentTimeMillis() + 1000 * wait;
+                nextLoginTime = System.currentTimeMillis() + 1_000 * wait;
                 throw new FailedLoginException("Login failed: throttled (wait: "
                     + wait + ")");
             }
@@ -1293,7 +1293,7 @@ public class Wiki implements Serializable
         // @revised 0.11 to take advantage of Collection.retainAll()
         // @revised 0.14 genericised to all page titles, not just category members
 
-        List<String> intersec = new ArrayList<>(5000); // silly workaround
+        List<String> intersec = new ArrayList<>(5_000); // silly workaround
         intersec.addAll(Arrays.asList(a));
         intersec.retainAll(Arrays.asList(b));
         return intersec.toArray(new String[intersec.size()]);
@@ -1321,7 +1321,7 @@ public class Wiki implements Serializable
      */
     public static String[] relativeComplement(String[] a, String[] b)
     {
-        List<String> compl = new ArrayList<>(5000); // silly workaround
+        List<String> compl = new ArrayList<>(5_000); // silly workaround
         compl.addAll(Arrays.asList(a));
         compl.removeAll(Arrays.asList(b));
         return compl.toArray(new String[compl.size()]);
@@ -1837,7 +1837,7 @@ public class Wiki implements Serializable
         String wpEditToken = (String)info.get("token");
 
         // post data
-        StringBuilder buffer = new StringBuilder(300000);
+        StringBuilder buffer = new StringBuilder(300_000);
         buffer.append("title=");
         buffer.append(encode(title, true));
         buffer.append("&text=");
@@ -1949,7 +1949,7 @@ public class Wiki implements Serializable
      */
     public void prepend(String title, String stuff, String summary, boolean minor, boolean bot) throws IOException, LoginException
     {
-        StringBuilder text = new StringBuilder(100000);
+        StringBuilder text = new StringBuilder(100_000);
         text.append(stuff);
         // section 0 to save bandwidth
         text.append(getSectionText(title, 0));
@@ -2495,7 +2495,7 @@ public class Wiki implements Serializable
             url.append(calendarToTimestamp(end));
         }
         String rvcontinue = null;
-        List<Revision> revisions = new ArrayList<>(1500);
+        List<Revision> revisions = new ArrayList<>(1_500);
 
         // main loop
         do
@@ -2854,7 +2854,7 @@ public class Wiki implements Serializable
         String wpMoveToken = (String)info.get("token");
 
         // post data
-        StringBuilder buffer = new StringBuilder(10000);
+        StringBuilder buffer = new StringBuilder(10_000);
         buffer.append("from=");
         buffer.append(encode(title, true));
         buffer.append("&to=");
@@ -3153,7 +3153,7 @@ public class Wiki implements Serializable
 
         // Perform the rollback. Although it's easier through the human interface, we want
         // to make sense of any resulting errors.
-        StringBuilder buffer = new StringBuilder(10000);
+        StringBuilder buffer = new StringBuilder(10_000);
         buffer.append("title=");
         buffer.append(encode(revision.getPage(), true));
         buffer.append("&user=");
@@ -3355,7 +3355,7 @@ public class Wiki implements Serializable
         String wpEditToken = (String)info.get("token");
 
         // send data
-        StringBuilder buffer = new StringBuilder(10000);
+        StringBuilder buffer = new StringBuilder(10_000);
         buffer.append("title=");
         buffer.append(rev.getPage());
         if (!reason.isEmpty())
@@ -4133,7 +4133,7 @@ public class Wiki implements Serializable
             url.append("&aurights=");
             url.append(encode(rights, false));
         }
-        List<String> members = new ArrayList<>(6667); // enough for most requests
+        List<String> members = new ArrayList<>(6_667); // enough for most requests
         do
         {
             String temp = url.toString();
@@ -4286,7 +4286,7 @@ public class Wiki implements Serializable
             temp.append("&ucend=");
             temp.append(calendarToTimestamp(end));
         }
-        List<Revision> revisions = new ArrayList<>(7500);
+        List<Revision> revisions = new ArrayList<>(7_500);
         String uccontinue = "", ucstart = "";
         if (start != null)
         {
@@ -4354,7 +4354,7 @@ public class Wiki implements Serializable
         }
 
         // post email
-        StringBuilder buffer = new StringBuilder(20000);
+        StringBuilder buffer = new StringBuilder(20_000);
         buffer.append("token=");
         buffer.append(encode(getToken("csrf"), false));
         buffer.append("&target=");
@@ -4665,7 +4665,7 @@ public class Wiki implements Serializable
 
         // some random variables we need later
         boolean done = false;
-        List<String[]> results = new ArrayList<>(5000);
+        List<String[]> results = new ArrayList<>(5_000);
 
         // fetch and iterate through the search results
         while (!done)
@@ -4714,7 +4714,7 @@ public class Wiki implements Serializable
         constructNamespaceString(url, "iu", ns);
 
         // fiddle
-        List<String> pages = new ArrayList<>(1333);
+        List<String> pages = new ArrayList<>(1_333);
         String next = "";
         do
         {
@@ -4772,7 +4772,7 @@ public class Wiki implements Serializable
             url.append("&blfilterredir=redirects");
 
         // main loop
-        List<String> pages = new ArrayList<>(6667); // generally enough
+        List<String> pages = new ArrayList<>(6_667); // generally enough
         String blcontinue = null;
         do
         {
@@ -4813,7 +4813,7 @@ public class Wiki implements Serializable
         constructNamespaceString(url, "ei", ns);
 
         // main loop
-        List<String> pages = new ArrayList<>(6667); // generally enough
+        List<String> pages = new ArrayList<>(6_667); // generally enough
         String eicontinue = null;
         do
         {
@@ -4846,7 +4846,7 @@ public class Wiki implements Serializable
      */
     public String[] getCategoryMembers(String name, int... ns) throws IOException
     {
-        return getCategoryMembers(name, 0, new ArrayList<String>(), ns);
+        return getCategoryMembers(name, 0, new ArrayList<>(), ns);
     }
 
     /**
@@ -4862,7 +4862,7 @@ public class Wiki implements Serializable
      */
     public String[] getCategoryMembers(String name, boolean subcat, int... ns) throws IOException
     {
-        return getCategoryMembers(name, (subcat ? 1 : 0), new ArrayList<String>(), ns);
+        return getCategoryMembers(name, (subcat ? 1 : 0), new ArrayList<>(), ns);
     }
 
     /**
@@ -4880,7 +4880,7 @@ public class Wiki implements Serializable
      */
     public String[] getCategoryMembers(String name, int maxdepth, int... ns) throws IOException
     {
-        return getCategoryMembers(name, maxdepth, new ArrayList<String>(), ns);
+        return getCategoryMembers(name, maxdepth, new ArrayList<>(), ns);
     }
 
     /**
@@ -5004,8 +5004,8 @@ public class Wiki implements Serializable
         // some variables we need later
         List[] ret = new ArrayList[] // no reason for more than 500 links
         {
-            new ArrayList<String>(667), // page titles
-            new ArrayList<URL>(667) // urls
+            new ArrayList<>(667), // page titles
+            new ArrayList<>(667) // urls
         };
         String euoffset = "0";
         // begin
@@ -5103,7 +5103,7 @@ public class Wiki implements Serializable
         urlBase.append("&bkstart=");
 
         // connection
-        List<LogEntry> entries = new ArrayList<>(1333);
+        List<LogEntry> entries = new ArrayList<>(1_333);
         do
         {
             String line = fetch(urlBase.toString() + bkstart, "getIPBlockList");
@@ -5318,7 +5318,7 @@ public class Wiki implements Serializable
         }
 
         // only now we can actually start to retrieve the logs
-        List<LogEntry> entries = new ArrayList<>(6667); // should be enough
+        List<LogEntry> entries = new ArrayList<>(6_667); // should be enough
         do
         {
             String line = fetch(url.toString() + "&lestart=" + lestart, "getLogEntries");
@@ -5629,7 +5629,7 @@ public class Wiki implements Serializable
             url.append("&apfilterredir=nonredirects");
 
         // parse
-        List<String> pages = new ArrayList<>(6667);
+        List<String> pages = new ArrayList<>(6_667);
         String next = null;
         do
         {
@@ -5686,7 +5686,7 @@ public class Wiki implements Serializable
 
         String url = query + "action=query&list=querypage&qplimit=max&qppage=" + page + "&qpcontinue=";
         String offset = "";
-        List<String> pages = new ArrayList<>(1333);
+        List<String> pages = new ArrayList<>(1_333);
 
         do
         {
@@ -7018,7 +7018,7 @@ public class Wiki implements Serializable
             zipped ? new GZIPInputStream(connection.getInputStream()) : connection.getInputStream(), "UTF-8")))
         {
             String line;
-            StringBuilder text = new StringBuilder(100000);
+            StringBuilder text = new StringBuilder(100_000);
             while ((line = in.readLine()) != null)
             {
                 text.append(line);
@@ -7072,7 +7072,7 @@ public class Wiki implements Serializable
         if (checkLag(connection))
             post(url, text, caller);
         
-        StringBuilder temp = new StringBuilder(100000);
+        StringBuilder temp = new StringBuilder(100_000);
         try (BufferedReader in = new BufferedReader(new InputStreamReader(
             zipped ? new GZIPInputStream(connection.getInputStream()) : connection.getInputStream(), "UTF-8")))
         {
@@ -7153,7 +7153,7 @@ public class Wiki implements Serializable
             multipartPost(url, params, caller);
 
         // done, read the response
-        StringBuilder temp = new StringBuilder(100000);
+        StringBuilder temp = new StringBuilder(100_000);
         try (BufferedReader in = new BufferedReader(new InputStreamReader(
             zipped ? new GZIPInputStream(connection.getInputStream()) : connection.getInputStream(), "UTF-8")))
         {
@@ -7184,7 +7184,7 @@ public class Wiki implements Serializable
             {
                 int time = connection.getHeaderFieldInt("Retry-After", 10);
                 logger.log(Level.WARNING, "Current database lag " + lag + " s exceeds " + maxlag + " s, waiting " + time + " s.");
-                Thread.sleep(time * 1000);
+                Thread.sleep(time * 1_000);
             }
             catch (InterruptedException ex)
             {
