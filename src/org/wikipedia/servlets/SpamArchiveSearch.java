@@ -92,11 +92,11 @@ public class SpamArchiveSearch extends HttpServlet
         // form for input
         String query = request.getParameter("query");
         buffer.append("<form action=\"./spamarchivesearch.jsp\" method=GET>\n<p>Search string: ");
-        buffer.append("<input type=text name=query");
+        buffer.append("<input type=text name=query required");
         if (query != null)
         {
             buffer.append(" value=\"");
-            buffer.append(ServletUtils.sanitize(query));
+            buffer.append(ServletUtils.sanitizeForHTML(query));
             buffer.append("\"");
         }
         buffer.append(">\n<input type=submit value=\"Search\">\n</form>\n");
@@ -121,7 +121,7 @@ public class SpamArchiveSearch extends HttpServlet
     public static void archivesearch(String query, StringBuilder buffer) throws IOException
     {
         buffer.append("<hr>\n<h2>Searching for \"");
-        buffer.append(ServletUtils.sanitize(query));
+        buffer.append(ServletUtils.sanitizeForHTML(query));
         buffer.append("\".</h2>\n");
 
         // search

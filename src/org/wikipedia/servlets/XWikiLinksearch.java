@@ -24,6 +24,7 @@ import java.util.*;
 import javax.swing.JOptionPane;
 import javax.servlet.*;
 import javax.servlet.http.*;
+import org.wikipedia.ParserUtils;
 import org.wikipedia.Wiki;
 
 /**
@@ -153,17 +154,17 @@ public class XWikiLinksearch extends HttpServlet
         if (wikiinput != null)
         {
             buffer.append(" value=\"");
-            buffer.append(ServletUtils.sanitize(wikiinput));
+            buffer.append(ServletUtils.sanitizeForHTML(wikiinput));
             buffer.append("\"");
         }
         else
             buffer.append(" disabled");
         // domain name text box
-        buffer.append(">\n<tr><td colspan=2>Domain to search: <td><input type=text name=link");
+        buffer.append(">\n<tr><td colspan=2>Domain to search: <td><input type=text name=link required");
         if (domain != null)
         {
             buffer.append(" value=\"");
-            buffer.append(ServletUtils.sanitize(domain));
+            buffer.append(ServletUtils.sanitizeForHTML(domain));
             buffer.append("\"");
         }
         buffer.append(">\n<tr><td colspan=2>Additional protocols: ");
@@ -229,8 +230,9 @@ public class XWikiLinksearch extends HttpServlet
     public static void linksearch(String domain, StringBuilder buffer, Wiki[] wikis, boolean https, boolean mailto,
         int... ns) throws IOException
     {
+        String sanitizedDomain = ServletUtils.sanitizeForHTML(domain);
         buffer.append("<hr>\n<h2>Searching for links to ");
-        buffer.append(ServletUtils.sanitize(domain));
+        buffer.append(sanitizedDomain);
         buffer.append("</h2>\n");
         for (Wiki wiki : wikis)
         {
@@ -250,28 +252,8 @@ public class XWikiLinksearch extends HttpServlet
             }
             buffer.append("<h3>Results for ");
             buffer.append(wiki.getDomain());
-            buffer.append(":</h3>\n<p><ol>\n");
-            for (int j = 0; j < temp[0].size(); j++)
-            {
-                buffer.append("<li><a href=\"//");
-                buffer.append(wiki.getDomain());
-                buffer.append("/wiki/");
-                buffer.append((String)temp[0].get(j));
-                buffer.append("\">");
-                buffer.append((String)temp[0].get(j));
-                buffer.append("</a> uses link <a href=\"");
-                buffer.append(temp[1].get(j).toString());
-                buffer.append("\">");
-                buffer.append(temp[1].get(j).toString());
-                buffer.append("</a>\n");
-            }
-            buffer.append("</ol>\n<p>");
-            buffer.append(temp[0].size());
-            buffer.append(" links found. (<a href=\"//");
-            buffer.append(wiki.getDomain());
-            buffer.append("/wiki/Special:Linksearch/*.");
-            buffer.append(ServletUtils.sanitize(domain));
-            buffer.append("\">Linksearch</a>)\n");
+            buffer.append(":</h3>\n");
+            buffer.append(ParserUtils.linksearchResultsToHTML(temp, wiki, sanitizedDomain));
         }
     }
 }

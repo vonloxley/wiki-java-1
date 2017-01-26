@@ -75,7 +75,7 @@ public class UserWatchlist extends HttpServlet
         // page input
         buffer.append("<form action=\"./userwatchlist.jsp\" method=GET>\n");
         buffer.append("<table>\n");
-        buffer.append("<tr><td>Input page:<td><input type=text size=30 name=page");
+        buffer.append("<tr><td>Input page:<td><input type=text size=30 name=page required");
         String page = request.getParameter("page");
         if (page == null)
             buffer.append(">\n");
@@ -179,11 +179,11 @@ public class UserWatchlist extends HttpServlet
             String user;
             String reason = "";
             if (split < 0)
-                user = ServletUtils.sanitize(token);
+                user = ServletUtils.sanitizeForHTML(token);
             else
             {
-                user = ServletUtils.sanitize(token.substring(0, split - 1)).trim();
-                reason = ServletUtils.sanitize(token.substring(split + 1)).trim();
+                user = ServletUtils.sanitizeForHTML(token.substring(0, split - 1)).trim();
+                reason = ServletUtils.sanitizeForHTML(token.substring(split + 1)).trim();
             }
 
             // user summary links and reason

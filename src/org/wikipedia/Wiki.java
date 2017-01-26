@@ -2093,8 +2093,7 @@ public class Wiki implements Serializable
 
     /**
      *  Gets the list of categories a particular page is in. Includes hidden
-     *  categories. Capped at <tt>max</tt> number of categories, there's no
-     *  reason why there should be more than that.
+     *  categories. 
      *
      *  @param title a page
      *  @return the list of categories that page is in
@@ -2714,7 +2713,7 @@ public class Wiki implements Serializable
      */
     public Revision[] deletedContribs(String u) throws IOException, CredentialNotFoundException
     {
-        return deletedContribs(u, null, null, false, ALL_NAMESPACES);
+        return deletedContribs(u, null, null, false);
     }
 
     /**
@@ -3103,7 +3102,7 @@ public class Wiki implements Serializable
         // build url and connect
         StringBuilder url = new StringBuilder(query);
         url.append("prop=revisions&rvprop=ids%7Ctimestamp%7Cuser%7Ccomment%7Cflags%7Csize%7Csha1&revids=");
-        Revision[] revisions = new Revision[oldids.length];
+        HashMap<Long, Revision> revs = new HashMap<>(2 * oldids.length);
         
         // fetch and parse
         for (String chunk : constructRevisionString(oldids))
@@ -3119,13 +3118,16 @@ public class Wiki implements Serializable
                     int y = line.indexOf("/>", j);
                     String blah = line.substring(j, y);
                     Revision rev = parseRevision(blah, title);
-                    long oldid = rev.getRevid();
-                    for (int k = 0; k < oldids.length; k++)
-                        if (oldids[k] == oldid)
-                            revisions[k] = rev;
+                    revs.put(rev.getRevid(), rev);
                 }
             }
         }
+        
+        // reorder 
+        Revision[] revisions = new Revision[oldids.length];
+        for (int i = 0; i < oldids.length; i++)
+            revisions[i] = revs.get(oldids[i]);
+        log(Level.INFO, "getRevisions", "Successfully retrieved " + oldids.length + " revisions.");
         return revisions;
     }
 
@@ -3568,19 +3570,11 @@ public class Wiki implements Serializable
         setCookies(connection);
         connection.connect();
 
-        // there should be a better way to do this
+        // download image to the file
         InputStream input = connection.getInputStream();
         if ("gzip".equals(connection.getContentEncoding()))
             input = new GZIPInputStream(input);
-
-        try (BufferedInputStream in = new BufferedInputStream(input);
-            BufferedOutputStream outStream = new BufferedOutputStream(new FileOutputStream(file)))
-        {
-            int c;
-            while ((c = in.read()) != -1)
-                outStream.write(c);
-            outStream.flush();
-        }
+        Files.copy(input, file.toPath(), StandardCopyOption.REPLACE_EXISTING);
         log(Level.INFO, "getImage", "Successfully retrieved image \"" + title + "\"");
         return true;
     }
@@ -3741,26 +3735,17 @@ public class Wiki implements Serializable
                 setCookies(connection);
                 connection.connect();
 
-                // there should be a better way to do this
+                // download image to file
                 InputStream input = connection.getInputStream();
                 if ("gzip".equals(connection.getContentEncoding()))
                     input = new GZIPInputStream(input);
-
-                try (BufferedInputStream in = new BufferedInputStream(input);
-                    BufferedOutputStream outStream = new BufferedOutputStream(new FileOutputStream(file)))
-                {
-                    int c;
-                    while ((c = in.read()) != -1)
-                        outStream.write(c);
-                    outStream.flush();
-
-                    // scrape archive name for logging purposes
-                    String archive = parseAttribute(line, "archivename", 0);
-                    if (archive == null)
-                        archive = title;
-                    log(Level.INFO, "getOldImage", "Successfully retrieved old image \"" + archive + "\"");
-                    return true;
-                }
+                Files.copy(input, file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                // scrape archive name for logging purposes
+                String archive = parseAttribute(line, "archivename", 0);
+                if (archive == null)
+                    archive = title;
+                log(Level.INFO, "getOldImage", "Successfully retrieved old image \"" + archive + "\"");
+                return true;
             }
         }
         return false;
@@ -4072,8 +4057,25 @@ public class Wiki implements Serializable
      */
     public boolean userExists(String username) throws IOException
     {
-        username = encode(username, true);
-        return fetch(query + "list=users&ususers=" + username, "userExists").contains("userid=\"");
+        return getUserInfo(new String[] { username })[0] != null;
+    }
+    
+    /**
+     *  Determines whether the specified users exist. Should evaluate to false
+     *  for anons. Output array is in the same order as the input usernames.
+     *
+     *  @param usernames an array of usernames
+     *  @return whether these users exist
+     *  @throws IOException if a network error occurs
+     *  @since 0.33
+     */
+    public boolean[] userExists(String[] usernames) throws IOException
+    {
+        boolean[] ret = new boolean[usernames.length];
+        Map[] info = getUserInfo(usernames);
+        for (int i = 0; i < usernames.length; i++)
+            ret[i] = (info[i] != null);
+        return ret;
     }
 
     /**
@@ -4227,6 +4229,104 @@ public class Wiki implements Serializable
     public User getUser(String username) throws IOException
     {
         return userExists(username) ? new User(normalize(username)) : null;
+    }
+    
+    /**
+     *  Gets the users with the given usernames. Returns null if it doesn't
+     *  exist. Output array is in the same order as the input array.
+     *  @param usernames a list of usernames
+     *  @return the users with those usernames
+     *  @since 0.33
+     *  @throws IOException if a network error occurs
+     */
+    public User[] getUsers(String[] usernames) throws IOException
+    {
+        User[] ret = new User[usernames.length];
+        boolean[] exists = userExists(usernames);
+        for (int i = 0; i < usernames.length; i++)
+            ret[i] = exists[i] ? new User(normalize(usernames[i])) : null;
+        return ret;
+    }
+
+    /**
+     *  Gets information about the given users. For each username, this returns
+     *  either null if the user doesn't exist, or:
+     *  <ul>
+     *  <li><b>editcount</b>: (int) {@link User#countEdits()} the user's edit
+     *    count
+     *  <li><b>groups</b>: (String[]) the groups the user is in (see
+     *    [[Special:Listgrouprights]])
+     *  <li><b>rights</b>: (String[]) the stuff the user can do
+     *  <li><b>emailable</b>: (Boolean) whether the user can be emailed
+     *    through [[Special:Emailuser]] or emailUser()
+     *  <li><b>blocked</b>: (Boolean) whether the user is blocked
+     *  <li><b>gender</b>: (Wiki.Gender) the user's gender
+     *  <li><b>created</b>: (Calendar) when the user account was created
+     *  </ul>
+     *
+     *  @param usernames the list of usernames to get information for
+     *  @return (see above). The Maps will come out in the same order as the
+     *  processed array. 
+     *  @throws IOException if a network error occurs
+     *  @since 0.33
+     */
+    public Map<String, Object>[] getUserInfo(String... usernames) throws IOException
+    {
+        Map[] info = new HashMap[usernames.length];
+        String url = query + "list=users&usprop=editcount%7Cgroups%7Crights%7Cemailable%7Cblockinfo%7Cgender%7Cregistration&ususers=";
+        for (String fragment : constructTitleString(url.length(), usernames, true))
+        {
+            String line = fetch(url + fragment, "getUserInfo");
+            String[] results = line.split("<user ");
+            for (int i = 1; i < results.length; i++)
+            {
+                // skip non-existent and IP addresses
+                String result = results[i];
+                if (result.contains("missing=\"\"") || result.contains("invalid=\"\""))
+                    continue;
+                
+                Map<String, Object> ret = new HashMap<>(10);
+                String parsedname = parseAttribute(result, "name", 0);
+
+                ret.put("blocked", result.contains("blockedby=\""));
+                ret.put("emailable", result.contains("emailable=\""));
+                ret.put("editcount", Integer.parseInt(parseAttribute(result, "editcount", 0)));
+                ret.put("gender", Gender.valueOf(parseAttribute(result, "gender", 0)));
+
+                String registrationdate = parseAttribute(result, "registration", 0);
+                // TODO remove check when https://phabricator.wikimedia.org/T24097 is resolved
+                if (registrationdate != null && !registrationdate.isEmpty())
+                    ret.put("created", timestampToCalendar(registrationdate, true));
+
+                // groups
+                List<String> temp = new ArrayList<>();
+                for (int x = result.indexOf("<g>"); x > 0; x = result.indexOf("<g>", ++x))
+                {
+                    int y = result.indexOf("</g>", x);
+                    temp.add(result.substring(x + 3, y));
+                }
+                String[] groups = temp.toArray(new String[temp.size()]);
+                ret.put("groups", groups);
+
+                // rights
+                temp.clear();
+                for (int x = result.indexOf("<r>"); x > 0; x = result.indexOf("<r>", ++x))
+                {
+                    int y = result.indexOf("</r>", x);
+                    temp.add(result.substring(x + 3, y));
+                }
+                String[] rights = temp.toArray(new String[temp.size()]);
+                ret.put("rights", rights);
+
+                // place the result into the return array
+                for (int j = 0; j < usernames.length; j++)
+                    if (normalize(usernames[j]).equals(parsedname))
+                        info[j] = ret;
+            }
+        }
+
+        log(Level.INFO, "getUserInfo", "Successfully retrieved user info for " + Arrays.toString(usernames));
+        return info;
     }
 
     /**
@@ -5208,62 +5308,21 @@ public class Wiki implements Serializable
     }
 
     /**
-     *  Gets the most recent set of log entries up to the given amount.
-     *  Equivalent to [[Special:Log]].
-     *
-     *  @param amount the amount of log entries to get
-     *  @return the most recent set of log entries
-     *  @throws IOException if a network error occurs
-     *  @throws IllegalArgumentException if amount &lt; 1
-     *  @since 0.08
-     */
-    public LogEntry[] getLogEntries(int amount) throws IOException
-    {
-        return getLogEntries(null, null, amount, ALL_LOGS, "", null, "", ALL_NAMESPACES);
-    }
-
-    /**
-     *  Gets log entries for a specific user. Equivalent to [[Special:Log]].
-     *  @param user the user to get log entries for
-     *  @throws IOException if a network error occurs
-     *  @return the set of log entries created by that user
-     *  @since 0.08
-     */
-    public LogEntry[] getLogEntries(User user) throws IOException
-    {
-        return getLogEntries(null, null, Integer.MAX_VALUE, ALL_LOGS, "", user, "", ALL_NAMESPACES);
-    }
-
-    /**
      *  Gets the log entries representing actions that were performed on a
      *  specific target. Equivalent to [[Special:Log]].
-     *
+     *  @param logtype what log to get (e.g. {@link #DELETION_LOG})
+     *  @param action what action to get (e.g. delete, undelete, etc.), use
+     *  null to not specify one
+     *  @param user the user performing the action. Use null not to specify
+     *  one.
      *  @param target the target of the action(s).
      *  @throws IOException if a network error occurs
      *  @return the specified log entries
      *  @since 0.08
      */
-    public LogEntry[] getLogEntries(String target) throws IOException
+    public LogEntry[] getLogEntries(String logtype, String action, String user, String target) throws IOException
     {
-        return getLogEntries(null, null, Integer.MAX_VALUE, ALL_LOGS, "", null, target, ALL_NAMESPACES);
-    }
-
-    /**
-     *  Gets all log entries that occurred between the specified dates.
-     *  WARNING: the start date is the most recent of the dates given, and
-     *  the order of enumeration is from newest to oldest. Equivalent to
-     *  [[Special:Log]].
-     *
-     *  @param start what timestamp to start. Use null to not specify one.
-     *  @param end what timestamp to end. Use null to not specify one.
-     *  @throws IOException if something goes wrong
-     *  @throws IllegalArgumentException if start &lt; end
-     *  @return the specified log entries
-     *  @since 0.08
-     */
-    public LogEntry[] getLogEntries(Calendar start, Calendar end) throws IOException
-    {
-        return getLogEntries(start, end, Integer.MAX_VALUE, ALL_LOGS, "", null, "", ALL_NAMESPACES);
+        return getLogEntries(logtype, action, user, target, null, null, Integer.MAX_VALUE, ALL_NAMESPACES);
     }
 
     /**
@@ -5271,17 +5330,17 @@ public class Wiki implements Serializable
      *  to [[Special:Log]] and [[Special:Newimages]] when
      *  <tt>type.equals(UPLOAD_LOG)</tt>.
      *
+     *  @param logtype what log to get (e.g. {@link #DELETION_LOG})
+     *  @param action what action to get (e.g. delete, undelete, etc.), use 
+     *  null to not specify one
      *  @param amount the number of entries to get
-     *  @param type what log to get (e.g. DELETION_LOG)
-     *  @param action what action to get (e.g. delete, undelete, etc.), use "" to
-     *  not specify one
      *  @throws IOException if a network error occurs
      *  @throws IllegalArgumentException if the log type doesn't exist
      *  @return the specified log entries
      */
-    public LogEntry[] getLogEntries(int amount, String type, String action) throws IOException
+    public LogEntry[] getLogEntries(String logtype, String action, int amount) throws IOException
     {
-        return getLogEntries(null, null, amount, type, action, null, "", ALL_NAMESPACES);
+        return getLogEntries(logtype, action, null, null, null, null, amount, ALL_NAMESPACES);
     }
 
     /**
@@ -5290,53 +5349,51 @@ public class Wiki implements Serializable
      *  WARNING: the start date is the most recent of the dates given, and
      *  the order of enumeration is from newest to oldest.
      *
+     *  @param logtype what log to get (e.g. {@link #DELETION_LOG})
+     *  @param action what action to get (e.g. delete, undelete, etc.), use 
+     *  null to not specify one
+     *  @param user the user performing the action. Use null not to specify
+     *  one.
+     *  @param target the target of the action. Use null not to specify one.
      *  @param start what timestamp to start. Use null to not specify one.
      *  @param end what timestamp to end. Use null to not specify one.
      *  @param amount the amount of log entries to get. If both start and
      *  end are defined, this is ignored. Use Integer.MAX_VALUE to not
      *  specify one.
-     *  @param log what log to get (e.g. DELETION_LOG)
-     *  @param action what action to get (e.g. delete, undelete, etc.), use "" to
-     *  not specify one
-     *  @param user the user performing the action. Use null not to specify
-     *  one.
-     *  @param target the target of the action. Use "" not to specify one.
      *  @param namespace filters by namespace. Returns empty if namespace
-     *  doesn't exist. Use ALL_NAMESPACES to not specify one.
+     *  doesn't exist. Use {@link #ALL_NAMESPACES} to not specify one.
      *  @throws IOException if a network error occurs
      *  @throws IllegalArgumentException if start &lt; end or amount &lt; 1
      *  @return the specified log entries
      *  @since 0.08
      */
-    public LogEntry[] getLogEntries(Calendar start, Calendar end, int amount, String log, String action,
-        User user, String target, int namespace) throws IOException
+    public LogEntry[] getLogEntries(String logtype, String action, String user, String target, 
+        Calendar start, Calendar end, int amount, int namespace) throws IOException
     {
         // construct the query url from the parameters given
         StringBuilder url = new StringBuilder(query);
-        url.append("list=logevents&leprop=title%7Ctype%7Cuser%7Ctimestamp%7Ccomment%7Cdetails&lelimit=");
+        url.append("list=logevents&leprop=ids%7Ctitle%7Ctype%7Cuser%7Ctimestamp%7Ccomment%7Cdetails&lelimit=");
 
         // check for amount
         if (amount < 1)
             throw new IllegalArgumentException("Tried to retrieve less than one log entry!");
         url.append(amount > max ? max : amount);
 
-        // log type
-        if (!log.equals(ALL_LOGS))
+        if (!logtype.equals(ALL_LOGS))
         {
-            if (action.isEmpty())
+            if (action == null)
             {
                 url.append("&letype=");
-                url.append(log);
+                url.append(logtype);
             }
             else
             {
                 url.append("&leaction=");
-                url.append(log);
+                url.append(logtype);
                 url.append("/");
                 url.append(action);
             }
         }
-
         if (namespace != ALL_NAMESPACES)
         {
             url.append("&lenamespace=");
@@ -5345,16 +5402,13 @@ public class Wiki implements Serializable
         if (user != null)
         {
             url.append("&leuser=");
-            // should already be normalized since we have a User object
-            url.append(encode(user.getUsername(), false));
+            url.append(encode(user, true));
         }
-        if (!target.isEmpty())
+        if (target != null)
         {
             url.append("&letitle=");
             url.append(encode(target, true));
         }
-
-        // check for start/end dates
         if (start != null)
         {
             if (end != null && start.before(end)) //aargh
@@ -5383,13 +5437,17 @@ public class Wiki implements Serializable
             // parse xml. We need to repeat the test because the XML may contain more than the required amount.
             String[] items = line.split("<item ");
             for (int i = 1; i < items.length && entries.size() < amount; i++)
-                entries.add(parseLogEntry(items[i]));
+            {
+                LogEntry le = parseLogEntry(items[i]);
+                le.logid = Long.parseLong(parseAttribute(items[i], "logid", 0));
+                entries.add(le);
+            }
         }
         while (entries.size() < amount && lecontinue != null);
 
         // log the success
         StringBuilder console = new StringBuilder("Successfully retrieved log (type=");
-        console.append(log);
+        console.append(logtype);
         int size = entries.size();
         console.append(", ");
         console.append(size);
@@ -5675,10 +5733,11 @@ public class Wiki implements Serializable
             url.append("&apmaxsize=");
             url.append(maximum);
         }
-        if (redirects == Boolean.TRUE)
-            url.append("&apfilterredir=redirects");
-        else if (redirects == Boolean.FALSE)
-            url.append("&apfilterredir=nonredirects");
+        if (redirects != null)
+        {
+            url.append("&apfilterredir=");
+            url.append(redirects ? "redirects" : "nonredirects");
+        }
 
         // parse
         List<String> pages = new ArrayList<>(6667);
@@ -6080,8 +6139,7 @@ public class Wiki implements Serializable
         }
 
         /**
-         *  Gets various properties of this user. Groups and rights are cached
-         *  for the current logged in user. Returns:
+         *  Gets various properties of this user. Returns:
          *  <ul>
          *  <li><b>editcount</b>: (int) {@link #countEdits()} the user's edit
          *    count
@@ -6101,47 +6159,7 @@ public class Wiki implements Serializable
          */
         public Map<String, Object> getUserInfo() throws IOException
         {
-            // TODO: move to main class, vectorize and fold userExists into this
-            String info = fetch(query + "list=users&usprop=editcount%7Cgroups%7Crights%7Cemailable%7Cblockinfo%7Cgender%7Cregistration&ususers="
-                + encode(username, false), "getUserInfo");
-            Map<String, Object> ret = new HashMap<>(10);
-
-            ret.put("blocked", info.contains("blockedby=\""));
-            ret.put("emailable", info.contains("emailable=\""));
-            ret.put("editcount", Integer.parseInt(parseAttribute(info, "editcount", 0)));
-            ret.put("gender", Gender.valueOf(parseAttribute(info, "gender", 0)));
-
-            String registrationdate = parseAttribute(info, "registration", 0);
-            // TODO remove check when https://phabricator.wikimedia.org/T24097 is resolved
-            if (registrationdate != null && !registrationdate.isEmpty())
-                ret.put("created", timestampToCalendar(registrationdate, true));
-
-            // groups
-            List<String> temp = new ArrayList<>();
-            for (int x = info.indexOf("<g>"); x > 0; x = info.indexOf("<g>", ++x))
-            {
-                int y = info.indexOf("</g>", x);
-                temp.add(info.substring(x + 3, y));
-            }
-            String[] temp2 = temp.toArray(new String[temp.size()]);
-            // cache
-            if (this.equals(getCurrentUser()))
-                groups = temp2;
-            ret.put("groups", temp2);
-
-            // rights
-            temp.clear();
-            for (int x = info.indexOf("<r>"); x > 0; x = info.indexOf("<r>", ++x))
-            {
-                int y = info.indexOf("</r>", x);
-                temp.add(info.substring(x + 3, y));
-            }
-            temp2 = temp.toArray(new String[temp.size()]);
-            // cache
-            if (this.equals(getCurrentUser()))
-                rights = temp2;
-            ret.put("rights", temp2);
-            return ret;
+            return Wiki.this.getUserInfo(new String[] { username })[0];
         }
 
         /**
@@ -6191,7 +6209,7 @@ public class Wiki implements Serializable
          */
         public LogEntry[] blockLog() throws IOException
         {
-            return getLogEntries(null, null, Integer.MAX_VALUE, BLOCK_LOG, "", null, "User:" + username, USER_NAMESPACE);
+            return Wiki.this.getLogEntries(Wiki.BLOCK_LOG, null, null, "User:" + username);
         }
 
         /**
@@ -6232,6 +6250,20 @@ public class Wiki implements Serializable
         public Revision[] contribs(int... ns) throws IOException
         {
             return Wiki.this.contribs(username, ns);
+        }
+        
+        /**
+         *  Returns the list of logged actions performed by this user.
+         *  @param logtype what log to get ({@link Wiki#DELETION_LOG} etc.)
+         *  @param action what action to get (e.g. delete, undelete), use 
+         *  "" to not specify one
+         *  @return (see above)
+         *  @throws IOException if a network error occurs
+         *  @since 0.33
+         */
+        public LogEntry[] getLogEntries(String logtype, String action) throws IOException
+        {
+            return Wiki.this.getLogEntries(logtype, action, username, null);
         }
 
         /**
@@ -6303,6 +6335,7 @@ public class Wiki implements Serializable
     public class LogEntry implements Comparable<LogEntry>
     {
         // internal data storage
+        private long logid = -1;
         private String type;
         private String action;
         private String reason;
@@ -6330,7 +6363,8 @@ public class Wiki implements Serializable
          *  the page after a move was performed).
          *  @since 0.08
          */
-        protected LogEntry(String type, String action, String reason, User user, String target, String timestamp, Object details)
+        protected LogEntry(String type, String action, String reason, User user, 
+            String target, String timestamp, Object details)
         {
             this.type = type;
             this.action = action;
@@ -6340,10 +6374,21 @@ public class Wiki implements Serializable
             this.timestamp = timestampToCalendar(timestamp, false);
             this.details = details;
         }
+        
+        /**
+         *  Gets the ID of this log entry. Only available if retrieved by
+         *  {@link Wiki#getLogEntries}, otherwise returns -1.
+         *  @return (see above)
+         *  @since 0.33
+         */
+        public long getLogID()
+        {
+            return logid;
+        }
 
         /**
          *  Gets the type of log that this entry is in.
-         *  @return one of DELETION_LOG, USER_CREATION_LOG, BLOCK_LOG, etc.
+         *  @return one of {@link Wiki#DELETION_LOG}, {@link Wiki#BLOCK_LOG}, etc.
          *  @since 0.08
          */
         public String getType()
@@ -6485,8 +6530,9 @@ public class Wiki implements Serializable
         @Override
         public String toString()
         {
-            // @revised 0.17 to a more traditional Java approach
-            StringBuilder s = new StringBuilder("LogEntry[type=");
+            StringBuilder s = new StringBuilder("LogEntry[logid=");
+            s.append(logid);
+            s.append(",type=");
             s.append(type);
             s.append(",action=");
             s.append(action == null ? "[hidden]" : action);
@@ -6520,6 +6566,23 @@ public class Wiki implements Serializable
             if (timestamp.equals(other.timestamp))
                 return 0; // might not happen, but
             return timestamp.after(other.timestamp) ? 1 : -1;
+        }
+        
+        /**
+         *  Determines whether two LogEntries refer to the same event.
+         *  @param other some object to compare to
+         *  @return (see above)
+         *  @since 0.33
+         */
+        @Override
+        public boolean equals(Object other)
+        {
+            if (!(other instanceof LogEntry))
+                return false;
+            LogEntry le = (LogEntry)other;
+            return type.equals(le.type) && action.equals(le.action) && 
+                user.equals(le.user) && target.equals(le.target) && 
+                reason.equals(le.reason) && timestamp.equals(le.timestamp);
         }
     }
 
@@ -7548,7 +7611,7 @@ public class Wiki implements Serializable
     }
     
     /**
-     *  Cuts up a list of revisions into batches for prop=X&ids=Y type queries.
+     *  Cuts up a list of revisions into batches for prop=X&amp;ids=Y type queries.
      *  @param ids a list of revision IDs
      *  @return the revisions ready for insertion into a URL
      *  @since 0.32

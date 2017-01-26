@@ -95,6 +95,10 @@ public class WikiUnitTest
     {
         assertTrue("I should exist!", enWiki.userExists("MER-C"));
         assertFalse("Anon should not exist", enWiki.userExists("127.0.0.1"));
+        boolean[] temp = testWiki.userExists(new String[] { "Jimbo Wales", "Djskgh;jgsd", "::/1" });
+        assertTrue("user exists: Jimbo", temp[0]);
+        assertFalse("user exists: nonsense", temp[1]);
+        assertFalse("user exists: IPv6 range", temp[2]);
     }
     
     @Test
@@ -166,7 +170,6 @@ public class WikiUnitTest
     public void getImage() throws Exception
     {
         File tempfile = File.createTempFile("wiki-java_getImage", null);
-        tempfile.deleteOnExit();
         assertFalse("getImage: non-existent file", enWiki.getImage("File:Sdkjf&sdlf.blah", tempfile));
         
         // non-thumbnailed Commons file
@@ -176,6 +179,7 @@ public class WikiUnitTest
         byte[] hash = sha256.digest(imageData);
         assertEquals("getImage", "fc63c250bfce3f3511ccd144ca99b451111920c100ac55aaf3381aec98582035",
             String.format("%064x", new BigInteger(1, hash)));
+        tempfile.delete();
     }
     
     @Test
@@ -204,6 +208,7 @@ public class WikiUnitTest
         // https://en.wikipedia.org/wiki/Special:Blocklist/Nimimaan
         // see also getLogEntries() below
         Wiki.LogEntry[] le = enWiki.getIPBlockList("Nimimaan");
+        assertEquals("getIPBlockList: ID not available", -1, le[0].getLogID());
         assertEquals("getIPBlockList: timestamp", "20160621131454", enWiki.calendarToTimestamp(le[0].getTimestamp()));
         assertEquals("getIPBlockList: user", "MER-C", le[0].getUser().getUsername());
         assertEquals("getIPBlockList: log", Wiki.BLOCK_LOG, le[0].getType());
@@ -228,8 +233,9 @@ public class WikiUnitTest
         
         // Block log
         Calendar c = new GregorianCalendar(2016, Calendar.JUNE, 30);
-        Wiki.LogEntry[] le = enWiki.getLogEntries(c, null, 5, Wiki.ALL_LOGS, "",
-            null, "User:Nimimaan", Wiki.ALL_NAMESPACES);
+        Wiki.LogEntry[] le = enWiki.getLogEntries(Wiki.ALL_LOGS, null, null, "User:Nimimaan", c, 
+            null, 5, Wiki.ALL_NAMESPACES);
+        assertEquals("getLogEntries: ID", 75695806L, le[0].getLogID());
         assertEquals("getLogEntries: timestamp", "20160621131454", enWiki.calendarToTimestamp(le[0].getTimestamp()));
         assertEquals("getLogEntries/block: user", "MER-C", le[0].getUser().getUsername());
         assertEquals("getLogEntries/block: log", Wiki.BLOCK_LOG, le[0].getType());
@@ -252,8 +258,8 @@ public class WikiUnitTest
         // https://en.wikipedia.org/w/api.php?action=query&list=logevents&letitle=Talk:96th%20Test%20Wing/Temp&format=xmlfm
         
         // Move log
-        le = enWiki.getLogEntries(c, null, 5, Wiki.ALL_LOGS, "", null, 
-            "Talk:96th Test Wing/Temp", Wiki.ALL_NAMESPACES);
+        le = enWiki.getLogEntries(Wiki.ALL_LOGS, null, null, "Talk:96th Test Wing/Temp",
+            c, null, 5, Wiki.ALL_NAMESPACES);
         assertEquals("getLogEntries/move: log", Wiki.MOVE_LOG, le[0].getType());
         assertEquals("getLogEntries/move: action", "move", le[0].getAction());
         // TODO: test for new title, redirect suppression
@@ -264,18 +270,17 @@ public class WikiUnitTest
         
         // RevisionDeleted log entries, no access
         // https://test.wikipedia.org/w/api.php?format=xmlfm&action=query&list=logevents&letitle=User%3AMER-C%2FTest
-        le = testWiki.getLogEntries("User:MER-C/Test");
+        le = testWiki.getLogEntries(Wiki.ALL_LOGS, null, null, "User:MER-C/Test");
         assertNull("getLogEntries: reason hidden", le[0].getReason());
         assertTrue("getLogEntries: reason hidden", le[0].isReasonDeleted());
         assertNull("getLogEntries: user hidden", le[0].getUser());
         assertTrue("getLogEntries: user hidden", le[0].isUserDeleted());
         // https://test.wikipedia.org/w/api.php?format=xmlfm&action=query&list=logevents&leuser=MER-C
         //     &lestart=20161002050030&leend=20161002050000&letype=delete
-        le = testWiki.getLogEntries(
+        le = testWiki.getLogEntries(Wiki.DELETION_LOG, null, "MER-C", null,
             testWiki.timestampToCalendar("20161002050030", false),
             testWiki.timestampToCalendar("20161002050000", false), 
-            Integer.MAX_VALUE, Wiki.DELETION_LOG, "", testWiki.getUser("MER-C"), 
-            "", Wiki.ALL_NAMESPACES);
+            Integer.MAX_VALUE, Wiki.ALL_NAMESPACES);
         assertNull("getLogEntries: action hidden", le[0].getTarget());
         assertTrue("getLogEntries: action hidden", le[0].isTargetDeleted());
     }
@@ -478,6 +483,38 @@ public class WikiUnitTest
     {
         assertNull("getUser: IPv4 address", testWiki.getUser("127.0.0.1"));
         assertNull("getUser: IP address range", testWiki.getUser("127.0.0.0/24"));
+    }
+
+    @Test
+    public void getUserInfo() throws Exception
+    {
+        Map<String, Object>[] info = testWiki.getUserInfo(new String[]
+        {
+            "127.0.0.1", // IP address
+            "MER-C", 
+            "DKdsf;lksd" // should be non-existent...
+        });
+        assertNull("getUserInfo: IP address", info[0]);
+        assertNull("getUserInfo: non-existent user", info[2]);
+        
+        // editcount omitted because it is dynamic
+        assertFalse("getUserInfo: blocked", (Boolean)info[1].get("blocked"));
+        assertEquals("getUserInfo: gender", Wiki.Gender.unknown, (Wiki.Gender)info[1].get("gender"));
+        assertEquals("getUserInfo: registration", "20070214113837", 
+            testWiki.calendarToTimestamp((Calendar)info[1].get("created")));
+        assertTrue("getUserInfo: email", (Boolean)info[1].get("emailable"));
+        
+        // check groups
+        String[] temp = (String[])info[1].get("groups");
+        List<String> groups = Arrays.asList(temp);
+        temp = new String[] { "*", "autoconfirmed", "user", "sysop" };
+        assertTrue("getUserInfo: groups", groups.containsAll(Arrays.asList(temp)));
+        
+        // check (subset of) rights
+        temp = (String[])info[1].get("rights");
+        List<String> rights = Arrays.asList(temp);
+        temp = new String[] { "apihighlimits", "delete", "block", "editinterface", "writeapi" };
+        assertTrue("getUserInfo: groups", rights.containsAll(Arrays.asList(temp)));
     }
     
     @Test

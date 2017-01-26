@@ -1,6 +1,6 @@
 /**
- *  @(#)AllWikiLinksearch.java 0.01 29/03/2011
- *  Copyright (C) 2011 MER-C
+ *  @(#)AllWikiLinksearch.java 0.02 26/12/2016
+ *  Copyright (C) 2011 - 2017 MER-C
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License
@@ -37,27 +37,30 @@ import org.wikipedia.*;
  *  before running this program. This will never be a servlet, as it takes about
  *  6 minutes to run.
  *  @author MER-C
- *  @version 0.01
+ *  @version 0.02
  */
 public class AllWikiLinksearch
 {
-    private static Queue<Wiki> queue = new ConcurrentLinkedQueue();
+    private static final Queue<Wiki> queue = new ConcurrentLinkedQueue();
     private static FileWriter out = null;
     private static ProgressMonitor monitor;
     private static int progress = 0;
 
     private static class LinksearchThread extends Thread
     {
-        private String domain;
+        private final String domain;
+        private final boolean httponly;
 
-        public LinksearchThread(String domain)
+        public LinksearchThread(String domain, boolean httponly)
         {
             this.domain = domain;
+            this.httponly = httponly;
         }
 
         /**
          *  The real meat of this program.
          */
+        @Override
         public void run()
         {
             while(!queue.isEmpty())
@@ -74,28 +77,15 @@ public class AllWikiLinksearch
                     builder.append(wiki.getDomain());
                     builder.append(" ===\n");
                     List[] links = wiki.linksearch("*." + domain);
+                    if (!httponly)
+                    {
+                        List[] temp = wiki.linksearch("https://*." + domain);
+                        links[0].addAll(temp[0]);
+                        links[1].addAll(temp[1]);
+                    }
                     linknumber = links[0].size();
                     if (linknumber != 0)
-                    {
-                        for (int i = 0; i < linknumber; i++)
-                        {
-                            builder.append("# [http://");
-                            builder.append(wiki.getDomain());
-                            builder.append("/wiki/");
-                            builder.append(((String)links[0].get(i)).replace(' ', '_'));
-                            builder.append(" ");
-                            builder.append(links[0].get(i));
-                            builder.append("] uses link <nowiki>");
-                            builder.append(links[1].get(i));
-                            builder.append("</nowiki>\n");
-                        }
-                        builder.append(linknumber);
-                        builder.append(" links found. ([http://");
-                        builder.append(wiki.getDomain());
-                        builder.append("/wiki/Special:Linksearch/*.");
-                        builder.append(domain);
-                        builder.append(" Linksearch])");
-                    }
+                        builder.append(ParserUtils.linksearchResultsToWikitext(links, domain));
                 }
                 catch (IOException ex)
                 {
@@ -111,33 +101,44 @@ public class AllWikiLinksearch
                     updateProgress();
                 }
             }
-            try
-            {
-                // flush so output is not truncated
-                out.flush();
-                sleep(5000);
-            }
-            catch (Exception ex)
-            {
-                // bleh
-            }
         }
     }
 
     public static void main(String[] args) throws IOException
     {
+        // parse command line options
+        String domain = null;
+        boolean httponly = false;
+        int threads = 3;
+        for (int i = 0; i < args.length; i++)
+        {
+            switch (args[i])
+            {
+                case "--httponly":
+                    httponly = true;
+                    break;
+                case "--numthreads":
+                    threads = Integer.parseInt(args[++i]);
+                    break;
+                default:
+                    domain = args[i];
+                    break;
+            }
+        }
+        
         // retrieve site matrix
-        ArrayList<Wiki> temp = new ArrayList<Wiki>(Arrays.asList(WMFWiki.getSiteMatrix()));
+        ArrayList<WMFWiki> temp = new ArrayList<>(Arrays.asList(WMFWiki.getSiteMatrix()));
         for (Wiki wiki : temp)
         {
-            String domain = wiki.getDomain();
+            String wikidomain = wiki.getDomain();
             // bad wikis: everything containing wikimania
-            if (!domain.contains("wikimania"))
+            if (!wikidomain.contains("wikimania"))
                 queue.add(wiki);
         }
 
         // initialize progress monitor
-        String domain = JOptionPane.showInputDialog(null, "Enter domain to search", "All wiki linksearch", JOptionPane.QUESTION_MESSAGE);
+        if (domain != null)
+            domain = JOptionPane.showInputDialog(null, "Enter domain to search", "All wiki linksearch", JOptionPane.QUESTION_MESSAGE);
         monitor = new ProgressMonitor(null, "Searching for links to " + domain, null, 0, queue.size());
         monitor.setMillisToPopup(0);
 
@@ -145,9 +146,8 @@ public class AllWikiLinksearch
         out = new FileWriter(domain + ".wiki");
         writeOutput("*{{LinkSummary|" + domain + "}}\nSearching " + queue.size() + " wikis at "
             + new Date().toString() + ".\n\n");
-        // TODO: perhaps make number of threads configurable
-        for (int i = 0; i < 3; i++)
-            new LinksearchThread(domain).start();
+        for (int i = 0; i < threads; i++)
+            new LinksearchThread(domain, httponly).start();
     }
 
     /**
@@ -159,6 +159,7 @@ public class AllWikiLinksearch
         try
         {
             out.write(output);
+            out.flush();
         }
         catch (IOException ex)
         {
