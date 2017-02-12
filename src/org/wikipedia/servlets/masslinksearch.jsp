@@ -21,6 +21,8 @@
     trimDirectiveWhitespaces="true"%>
 
 <%
+    request.setAttribute("toolname", "Mass linksearch");
+
     boolean https = (request.getParameter("https") != null);
 
     String wiki = request.getParameter("wiki");
@@ -48,7 +50,7 @@
 <html>
 <head>
 <link rel=stylesheet href="styles.css">
-<title>Mass Linksearch</title>
+<title><%= request.getAttribute("toolname") %></title>
 </head>
 
 <body>
@@ -72,12 +74,8 @@ for more domains.
         </textarea>
 <tr>
     <td>Additional protocols:
-    <td><input type=checkbox name=https value=1<%
-        if (https || inputdomains.isEmpty())
-        {
-        %> checked<%
-        }
-        %>>HTTPS
+    <td><input type=checkbox name=https value=1<%= (inputdomains.isEmpty() ||
+         https) ? " checked" : "" %>>HTTPS
 </table>
 <br>
 <input type=submit value=Search>
@@ -86,9 +84,7 @@ for more domains.
 <%
     if (!inputdomains.isEmpty() && !wiki.isEmpty())
     {
-%>
-<hr>
-<%
+        out.println("<hr>");
         String[] domains = inputdomains.split("\r\n");
         Wiki w = new Wiki(wiki);
         w.setMaxLag(-1);
@@ -116,11 +112,9 @@ for more domains.
             linksummary.append("*{{LinkSummary|");
             linksummary.append(domain);
             linksummary.append("}}\n");
-%>
-        
-<h3>Results for <%= domain %></h3>
-<%= ParserUtils.linksearchResultsToHTML(temp, w, domain) %>
-<%
+
+            out.println("<h3>Results for " + domain + "</h3>");
+            out.println(ParserUtils.linksearchResultsToHTML(temp, w, domain));
         }
 %>
 <hr>
@@ -134,8 +128,4 @@ for more domains.
 <%
     }
 %>
-        
-<br>
-<br>
-<hr>
-<p>Mass linksearch tool: <%@ include file="footer.jsp" %>
+<%@ include file="footer.jsp" %>

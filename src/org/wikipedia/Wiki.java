@@ -423,6 +423,7 @@ public class Wiki implements Serializable
 
     // various caches
     private transient LinkedHashMap<String, Integer> namespaces = null;
+    private transient ArrayList<Integer> ns_subpages = null;
     private transient List<String> watchlist = null;
 
     // preferences
@@ -1327,6 +1328,46 @@ public class Wiki implements Serializable
             title = title.substring(title.indexOf(':') + 1);
         return namespaceIdentifier(namespace + 1) + ":" + title;
     }
+    
+    /**
+     *  If a namespace supports subpages, return the top-most page -- e.g. 
+     *  <tt>getRootPage("Talk:Aaa/Bbb/Ccc")</tt> returns "Talk:Aaa" if the talk
+     *  namespace supports subpages, "Talk:Aaa/Bbb/Ccc" if it doesn't. See also
+     *  the parser function {{ROOTPAGENAME}}, though that removes the namespace
+     *  prefix.
+     * 
+     *  @param page a page
+     *  @return (see above)
+     *  @throws IOException if a network error occurs
+     *  @since 0.33
+     */
+    public String getRootPage(String page) throws IOException
+    {
+        if (supportsSubpages(namespace(page)))
+            return page.substring(0, page.indexOf("/"));
+        else
+            return page;
+    }
+    
+    /**
+     *  If a namespace supports subpages, return the top-most page -- e.g. 
+     *  <tt>getRootPage("Talk:Aaa/Bbb/Ccc")</tt> returns "Talk:Aaa/Bbb" if the 
+     *  talk namespace supports subpages, "Talk:Aaa/Bbb/Ccc" if it doesn't. See
+     *  also the parser function {{BASEPAGENAME}}, though that removes the
+     *  namespace prefix.
+     * 
+     *  @param page a page
+     *  @return (see above)
+     *  @throws IOException if a network error occurs
+     *  @since 0.33
+     */
+    public String getParentPage(String page) throws IOException
+    {
+        if (supportsSubpages(namespace(page)))
+            return page.substring(0, page.lastIndexOf("/"));
+        else
+            return page;
+    }
 
     /**
      *  Gets miscellaneous page info.
@@ -1535,7 +1576,23 @@ public class Wiki implements Serializable
         ensureNamespaceCache();
         return (LinkedHashMap<String, Integer>)namespaces.clone();
     }
-
+    
+    /**
+     *  Returns true if the given namespace allows subpages.
+     *  @param ns a namespace number
+     *  @return (see above)
+     *  @throws IOException if a network error occurs
+     *  @throws IllegalArgumentException if the give namespace does not exist
+     *  @since 0.33
+     */
+    public boolean supportsSubpages(int ns) throws IOException
+    {
+        ensureNamespaceCache();
+        if (namespaces.values().contains(ns))
+            return ns_subpages.contains(ns);
+        throw new IllegalArgumentException("Invalid namespace " + ns);
+    }
+    
     /**
      *  Populates the namespace cache.
      *  @throws IOException if a network error occurs.
@@ -1545,19 +1602,31 @@ public class Wiki implements Serializable
     {
         String line = fetch(query + "meta=siteinfo&siprop=namespaces%7Cnamespacealiases", "namespace");
         namespaces = new LinkedHashMap<>(30);
+        ns_subpages = new ArrayList<>(30);
 
         // xml form: <ns id="-2" canonical="Media" ... >Media</ns> or <ns id="0" ... />
-        for (int a = line.indexOf("<ns "); a > 0; a = line.indexOf("<ns ", ++a))
+        String[] items = line.split("<ns");
+        for (int i = 1; i < items.length; i++)
         {
-            int ns = Integer.parseInt(parseAttribute(line, "id", a));
-            int b = line.indexOf('>', a) + 1;
-            int c = line.indexOf('<', b);
-            // this must be first so that namespaceIdentifier always returns the
-            // localized name
-            namespaces.put(normalize(decode(line.substring(b, c))), ns);
-            String canonicalnamespace = parseAttribute(line, "canonical", a);
-            if (canonicalnamespace != null) // not present for main namespace
+            int ns = Integer.parseInt(parseAttribute(items[i], "id", 0));
+            
+            // parse localized namespace name
+            // must be before parsing canonical namespace so that 
+            // namespaceIdentifier always returns the localized name
+            int b = items[i].indexOf('>') + 1;
+            int c = items[i].indexOf("</ns>");
+            if (c < 0)
+                namespaces.put("", ns);
+            else
+                namespaces.put(normalize(decode(items[i].substring(b, c))), ns);
+            
+            String canonicalnamespace = parseAttribute(items[i], "canonical", 0);
+            if (canonicalnamespace != null)
                 namespaces.put(canonicalnamespace, ns);
+            
+            // does this namespace support subpages?
+            if (items[i].contains("subpages=\"\""))
+                ns_subpages.add(ns);
         }
 
         log(Level.INFO, "namespace", "Successfully retrieved namespace list (" + namespaces.size() + " namespaces)");

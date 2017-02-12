@@ -91,6 +91,73 @@ public class WikiUnitTest
     }
     
     @Test
+    public void supportsSubpages() throws Exception
+    {
+        assertFalse("supportsSubpages: main", enWiki.supportsSubpages(Wiki.MAIN_NAMESPACE));
+        assertTrue("supportsSubpages: talk", enWiki.supportsSubpages(Wiki.TALK_NAMESPACE));
+        try
+        {
+            enWiki.supportsSubpages(-4444);
+            fail("supportsSubpages: obviously invalid namespace");
+        }
+        catch (IllegalArgumentException ex)
+        {
+            // test passed
+        }
+    }
+    
+    @Test
+    public void getTalkPage() throws Exception
+    {
+        assertEquals("getTalkPage: main", "Talk:Hello", enWiki.getTalkPage("Hello"));
+        try
+        {
+            enWiki.getTalkPage("Talk:Hello");
+            fail("getTalkPage: tried to get talk page of a talk page");
+        }
+        catch (IllegalArgumentException ex)
+        {
+            // test passed
+        }
+        try
+        {
+            enWiki.getTalkPage("Special:Newpages");
+            fail("getTalkPage: tried to get talk page of a special page");
+        }
+        catch (IllegalArgumentException ex)
+        {
+            // test passed
+        }
+        try
+        {
+            enWiki.getTalkPage("Media:Wiki.png");
+            fail("getTalkPage: tried to get talk page of a media page");
+        }
+        catch (IllegalArgumentException ex)
+        {
+            // test passed
+        }
+    }
+    
+    @Test
+    public void getRootPage() throws Exception
+    {
+        assertEquals("getRootPage: main ns", "Aaa/Bbb/Ccc", enWiki.getRootPage("Aaa/Bbb/Ccc"));
+        assertEquals("getRootPage: talk ns", "Talk:Aaa", enWiki.getRootPage("Talk:Aaa/Bbb/Ccc"));
+        assertEquals("getRootPage: rtl", "ويكيبيديا:نقاش الحذف",
+            arWiki.getRootPage("ويكيبيديا:نقاش الحذف/كأس الخليج العربي لكرة القدم 2014 المجموعة ب"));
+    }
+    
+    @Test
+    public void getParentPage() throws Exception
+    {
+        assertEquals("getParentPage: main ns", "Aaa/Bbb/Ccc", enWiki.getParentPage("Aaa/Bbb/Ccc"));
+        assertEquals("getParentPage: talk ns", "Talk:Aaa/Bbb", enWiki.getParentPage("Talk:Aaa/Bbb/Ccc"));
+        assertEquals("getParentPage: rtl", "ويكيبيديا:نقاش الحذف",
+            arWiki.getParentPage("ويكيبيديا:نقاش الحذف/كأس الخليج العربي لكرة القدم 2014 المجموعة ب"));
+    }
+    
+    @Test
     public void userExists() throws Exception
     {
         assertTrue("I should exist!", enWiki.userExists("MER-C"));
@@ -352,11 +419,6 @@ public class WikiUnitTest
         {
             // the expected result. This is currently broken because fetch
             // intercepts the API error.
-        }
-        catch (Throwable ex)
-        {
-            ex.printStackTrace();
-            fail("getSectionText: should throw IllegalArgumentException");
         }
         */
     }
